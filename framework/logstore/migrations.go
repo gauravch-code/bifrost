@@ -347,6 +347,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_warp_vector_deletes_table"}, run: migrationAddWarpVectorDeletesTable},
 	{IDs: []string{"mcp_tool_logs_add_method_column"}, run: migrationAddMethodColumnToMCPToolLogs},
 	{IDs: []string{"add_relay_logs_table"}, run: migrationCreateRelayLogsTable},
+	{IDs: []string{"relay_logs_add_body_truncated_columns"}, run: migrationAddRelayLogBodyTruncatedColumns},
 }
 
 // areThereAnyPendingMigrations returns true if there are any pending migrations to be applied.
@@ -5987,6 +5988,39 @@ func migrationCreateRelayLogsTable(ctx context.Context, db *gorm.DB, logger sche
 		},
 		Rollback: func(*gorm.DB) error {
 			return fmt.Errorf("%s is non-rollbackable: relay_logs holds recorded call history and charges, and dropping it would delete that content rather than reverse a schema change", migrationName)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error while running %s migration: %s", migrationName, err.Error())
+	}
+	return nil
+}
+
+// migrationAddRelayLogBodyTruncatedColumns adds request_body_truncated and
+// response_body_truncated to relay_logs. add_relay_logs_table's AutoMigrate only ran once, at
+// table creation, so an install whose relay_logs table already existed before these struct fields
+// were added needs them added explicitly, as every other incremental relay_logs/logs column does.
+func migrationAddRelayLogBodyTruncatedColumns(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "relay_logs_add_body_truncated_columns"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	opts := *migrator.DefaultOptions
+	opts.UseTransaction = true
+	m := migrator.New(db, &opts, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &RelayLog{}, "request_body_truncated"); err != nil {
+				return err
+			}
+			return addColumnIfNotExists(tx, logger, &RelayLog{}, "response_body_truncated")
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := dropColumnIfExists(tx, logger, &RelayLog{}, "request_body_truncated"); err != nil {
+				return err
+			}
+			return dropColumnIfExists(tx, logger, &RelayLog{}, "response_body_truncated")
 		},
 	}})
 	if err := m.Migrate(); err != nil {

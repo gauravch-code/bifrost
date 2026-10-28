@@ -248,6 +248,8 @@ export interface RelayLog {
 	response_headers?: Record<string, string>;
 	request_body?: string;
 	response_body?: string;
+	request_body_truncated?: boolean; // the stored body was cut to fit the row's bound
+	response_body_truncated?: boolean;
 	content_hidden: boolean;
 	error_details?: BifrostError;
 	plugin_logs?: string; // JSON string of plugin execution logs grouped by plugin name

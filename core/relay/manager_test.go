@@ -339,6 +339,29 @@ func TestServeStreamCapturedBodyIsBoundedAtCap(t *testing.T) {
 
 	require.Len(t, pipeline.post, 1)
 	assert.Len(t, pipeline.post[0].Body, maxStreamBodyCaptureLen, "capture never grows past the bound, however large the reply")
+	assert.True(t, pipeline.post[0].BodyTruncated, "the reply forwarded more than the capture kept")
+}
+
+func TestServeStreamCapturedBodyNotTruncatedWhenItFitsTheCap(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"delta\":\"a\"}\n\n")
+	}))
+	defer upstream.Close()
+	cfg := bearerConfig("llm", upstream.URL)
+	cfg.Routes = []schemas.RelayRouteConfig{{Method: "POST", Path: "/chat", Stream: schemas.Ptr(true)}}
+	m, pipeline := newTestManager(t, cfg)
+
+	ctx := testCtx(t)
+	ctx.SetValue(schemas.BifrostContextKeyShouldCaptureRelayContent, true)
+	res, bErr := m.Serve(ctx, Request{Endpoint: "llm", Method: "POST", Path: "/chat", Headers: map[string]string{}})
+	require.Nil(t, bErr)
+	_, err := io.ReadAll(res.Stream)
+	require.NoError(t, err)
+	require.NoError(t, res.Stream.Close())
+
+	require.Len(t, pipeline.post, 1)
+	assert.False(t, pipeline.post[0].BodyTruncated, "a reply that fits under the cap was not cut")
 }
 
 func TestServeJobRouteHandsBackJob(t *testing.T) {

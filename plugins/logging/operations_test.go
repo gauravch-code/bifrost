@@ -5679,6 +5679,30 @@ func TestRelayLogRow(t *testing.T) {
 	require.Equal(t, logstore.RelayLogStatusError, entry.Status)
 }
 
+// A body cut to fit the row's bound is flagged truncated, not silently kept as a cut-off (often
+// invalid) string with no explanation, whether the cut happened in boundedBody (a buffered call)
+// or earlier, in core/relay's stream capture (a streamed call, where resp.Body already arrives
+// short and boundedBody's own length check cannot see the original size).
+func TestRelayLogBodyTruncatedFlag(t *testing.T) {
+	plugin := policyTestPlugin(nil, nil, true)
+	plugin.writeQueue = make(chan *writeQueueEntry, 2)
+	ctx := policyCtx(false, nil)
+	ctx.SetValue(schemas.BifrostContextKeyRequestID, "req-truncated")
+
+	oversizedRequest := strings.Repeat("x", maxEndpointLogBodyLen+1024)
+	_, _, err := plugin.PreRelayHook(ctx, &schemas.BifrostRelayRequest{RelayName: "tavily", Method: "POST", Path: "/search", Body: []byte(oversizedRequest)})
+	require.NoError(t, err)
+	_, _, err = plugin.PostRelayHook(ctx, &schemas.BifrostRelayResponse{
+		RelayName: "tavily", StatusCode: 200, Body: []byte(`{"ok":true}`), BodyTruncated: true,
+	}, nil)
+	require.NoError(t, err)
+
+	entry := drainRelayLogWrite(t, plugin.writeQueue)
+	require.True(t, entry.RequestBodyTruncated, "the oversized request body was cut by boundedBody")
+	require.True(t, entry.ResponseBodyTruncated, "a short-but-already-cut streamed body still carries the flag from resp.BodyTruncated")
+	require.Len(t, *entry.RequestBody, maxEndpointLogBodyLen)
+}
+
 // PreRelayHook's processing row and PostRelayHook's terminal write share one ID and reconcile via
 // UPDATE, not a second INSERT — the same two-phase pattern LLM/chat logs use, so a relay call is
 // visible in Relay Logs while still in flight and a crash between the two still leaves a row.

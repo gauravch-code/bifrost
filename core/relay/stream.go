@@ -155,6 +155,9 @@ func (s *Stream) complete(readErr error) {
 		}
 		if len(s.capture) > 0 {
 			resp.Body = s.capture
+			// bytesOut tracks every byte forwarded regardless of the capture cap, so it exceeding
+			// what was captured is exactly what "truncated" means here.
+			resp.BodyTruncated = s.bytesOut > int64(len(s.capture))
 		}
 		if s.counted {
 			usage := s.usage

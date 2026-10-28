@@ -69,20 +69,26 @@ type RelayLog struct {
 	App              *string `gorm:"type:varchar(128);index:idx_relay_logs_app" json:"app,omitempty"`               // Backend-detected client app derived from user_agent
 	// Every team, customer and business unit the call settled, as on logs and mcp_tool_logs: the
 	// scalar columns keep the first, these keep them all, and the dimension filters read both.
-	TeamIDs                 *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	TeamNames               *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	CustomerIDs             *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	CustomerNames           *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	BusinessUnitIDs         *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	BusinessUnitNames       *string               `gorm:"type:text" json:"-"` // JSON serialized []string
-	BudgetIDs               *string               `gorm:"type:text" json:"-"`
-	RateLimitIDs            *string               `gorm:"type:text" json:"-"`
-	RequestID               string                `gorm:"type:varchar(255);index:idx_relay_logs_request_id;not null" json:"request_id"`
-	Metadata                *string               `gorm:"type:text" json:"-"` // JSON map: logging headers, x-bf-lh-* labels, x-bf-dim-* dimensions and the key's metadata, as on LLM and MCP rows
-	RequestHeaders          *string               `gorm:"type:text" json:"-"`
-	ResponseHeaders         *string               `gorm:"type:text" json:"-"`
-	RequestBody             *string               `gorm:"type:text" json:"request_body,omitempty"`
-	ResponseBody            *string               `gorm:"type:text" json:"response_body,omitempty"`
+	TeamIDs           *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	TeamNames         *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	CustomerIDs       *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	CustomerNames     *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	BusinessUnitIDs   *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	BusinessUnitNames *string `gorm:"type:text" json:"-"` // JSON serialized []string
+	BudgetIDs         *string `gorm:"type:text" json:"-"`
+	RateLimitIDs      *string `gorm:"type:text" json:"-"`
+	RequestID         string  `gorm:"type:varchar(255);index:idx_relay_logs_request_id;not null" json:"request_id"`
+	Metadata          *string `gorm:"type:text" json:"-"` // JSON map: logging headers, x-bf-lh-* labels, x-bf-dim-* dimensions and the key's metadata, as on LLM and MCP rows
+	RequestHeaders    *string `gorm:"type:text" json:"-"`
+	ResponseHeaders   *string `gorm:"type:text" json:"-"`
+	RequestBody       *string `gorm:"type:text" json:"request_body,omitempty"`
+	ResponseBody      *string `gorm:"type:text" json:"response_body,omitempty"`
+	// RequestBodyTruncated/ResponseBodyTruncated say whether the stored body was cut to fit the
+	// row's bound (plugins/logging's maxEndpointLogBodyLen or core/relay's matching stream capture
+	// cap), so a body that fails to pretty-print on the wire has an explanation instead of silently
+	// rendering as whatever the cut happened to produce.
+	RequestBodyTruncated    bool                  `gorm:"default:false" json:"request_body_truncated,omitempty"`
+	ResponseBodyTruncated   bool                  `gorm:"default:false" json:"response_body_truncated,omitempty"`
 	ErrorDetails            string                `gorm:"type:text" json:"-"`
 	ContentHidden           bool                  `gorm:"default:false" json:"content_hidden"`
 	PluginLogs              string                `gorm:"type:text" json:"plugin_logs,omitempty"`

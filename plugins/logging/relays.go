@@ -68,7 +68,7 @@ func (p *LoggerPlugin) PreRelayHook(ctx *schemas.BifrostContext, req *schemas.Bi
 	entry.MetadataParsed = mergeVirtualKeyMetadata(p.captureLoggingHeaders(ctx), ctx)
 	entry.RequestHeadersParsed = relayMatchedHeaders(req)
 	if len(req.Body) > 0 {
-		entry.RequestBody = boundedBody(req.Body)
+		entry.RequestBody, entry.RequestBodyTruncated = boundedBody(req.Body)
 	}
 	// A streamed reply has no body until core/relay buffers it as it forwards bytes; that buffering
 	// only pays its cost when the content policy would keep the body anyway, so the decision is
@@ -147,7 +147,10 @@ func (p *LoggerPlugin) PostRelayHook(ctx *schemas.BifrostContext, resp *schemas.
 			entry.OverheadLatency = &overhead
 		}
 		if len(resp.Body) > 0 {
-			entry.ResponseBody = boundedBody(resp.Body)
+			entry.ResponseBody, entry.ResponseBodyTruncated = boundedBody(resp.Body)
+			// A streamed reply may already have been cut at the capture bound before reaching here;
+			// boundedBody has no way to see that on its own since resp.Body is already short.
+			entry.ResponseBodyTruncated = entry.ResponseBodyTruncated || resp.BodyTruncated
 		}
 		applyEndpointUsage(entry, resp.Usage)
 	}
@@ -194,6 +197,7 @@ func (p *LoggerPlugin) PostRelayHook(ctx *schemas.BifrostContext, resp *schemas.
 	// the operator chose them; only the bodies and the query string are content.
 	if !policy.storeContent || policy.hidden {
 		entry.RequestBody, entry.ResponseBody = nil, nil
+		entry.RequestBodyTruncated, entry.ResponseBodyTruncated = false, false
 		if i := strings.IndexByte(entry.Path, '?'); i >= 0 {
 			entry.Path = entry.Path[:i]
 		}
@@ -434,9 +438,13 @@ func redactQuery(raw string) string {
 }
 
 // boundedBody keeps up to maxEndpointLogBodyLen bytes of a body as text; a binary body is not kept.
-func boundedBody(body []byte) *string {
+// truncated reports whether the original body was cut to reach that bound — the row needs this so
+// the UI can explain a body that renders oddly (often invalid JSON) instead of leaving it
+// unexplained, since a cut body is not reformatted to stay valid.
+func boundedBody(body []byte) (text *string, truncated bool) {
 	if len(body) > maxEndpointLogBodyLen {
 		body = body[:maxEndpointLogBodyLen]
+		truncated = true
 	}
 	if !utf8.Valid(body) {
 		// A cut can split a rune at the end; anything else invalid is a binary payload.
@@ -445,12 +453,12 @@ func boundedBody(body []byte) *string {
 			trimmed = trimmed[:len(trimmed)-1]
 		}
 		if !utf8.Valid(trimmed) {
-			return nil
+			return nil, truncated
 		}
 		body = trimmed
 	}
 	s := string(body)
-	return &s
+	return &s, truncated
 }
 
 // relayMatchedHeaders keeps the request headers the matched route matches on, since they are what
